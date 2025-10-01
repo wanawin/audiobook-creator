@@ -1,51 +1,68 @@
 import streamlit as st
-from gtts import gTTS
 import fitz  # PyMuPDF
 import re
 import io
+from gtts import gTTS
+import subprocess
+import tempfile
+import os
 
-st.title("📚 PDF Chapters ➜ Expressive MP3")
+st.title("📚 PDF Chapter ➜ Expressive MP3")
 
-uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
-chapter_range = st.text_input("Chapters (e.g. 10-12)")
+uploaded_pdf = st.file_uploader("Upload PDF", type=["pdf"])
+chapter_input = st.text_input("Enter chapter number (e.g. 10):")
 
-if uploaded_file and chapter_range:
-    # Extract PDF text
-    pdf = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+if uploaded_pdf and chapter_input:
+    try:
+        chap_num = int(chapter_input)
+    except ValueError:
+        st.error("Please enter just a number (e.g. 10).")
+        st.stop()
+
+    # --- Extract text from PDF ---
+    pdf_bytes = uploaded_pdf.read()
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     full_text = ""
-    for page in pdf:
+    for page in doc:
         full_text += page.get_text("text") + "\n"
 
-    # Use regex that matches just plain numbers on their own line
-    parts = re.split(r"(?m)^\s*(\d+)\s*$", full_text)
-    # parts will be like: ['', '1', 'Chapter1 text', '2', 'Chapter2 text', ...]
-
-    # Build dict {chapter_num: text}
+    # --- Split on lines that contain only a number ---
+    # We split so each chapter is a dict {chapter_number: text}
+    parts = re.split(r'(?m)^\s*(\d+)\s*$', full_text)
+    # parts comes like ['', '1', 'chapter1 text', '2', 'chapter2 text', ...]
     chapters = {}
     for i in range(1, len(parts), 2):
-        try:
-            num = int(parts[i])
-            content = parts[i + 1].strip()
-            chapters[num] = content
-        except:
-            continue
+        number = int(parts[i])
+        text = parts[i+1].strip()
+        chapters[number] = text
 
-    # Parse requested range
-    start, end = map(int, chapter_range.split("-"))
-    selected = [chapters[c] for c in range(start, end + 1) if c in chapters]
-
-    if not selected:
-        st.error("⚠️ No chapters found in that range.")
+    if chap_num not in chapters:
+        st.error(f"Chapter {chap_num} not found. Available: {sorted(chapters.keys())}")
     else:
-        combined_text = "\n\n".join(selected)
+        text = chapters[chap_num]
+        st.subheader(f"Chapter {chap_num} Preview")
+        st.write(text[:500] + "..." if len(text) > 500 else text)
 
-        # Convert to speech with gTTS
-        tts = gTTS(combined_text, lang="en", slow=False)
-        mp3_bytes = io.BytesIO()
-        tts.write_to_fp(mp3_bytes)
-        mp3_bytes.seek(0)
+        if st.button("Generate Expressive MP3"):
+            with st.spinner("Generating speech..."):
+                tts = gTTS(text, lang="en")
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+                    tts.save(tmp.name)
+                    temp_high = tmp.name
 
-        st.audio(mp3_bytes, format="audio/mp3")
-        st.download_button("Download MP3", data=mp3_bytes,
-                           file_name=f"chapters_{start}-{end}.mp3",
-                           mime="audio/mp3")
+                # Compress to 64 kbps
+                temp_low = temp_high.replace(".mp3", "_64k.mp3")
+                subprocess.run([
+                    "ffmpeg", "-y", "-i", temp_high, "-b:a", "64k", temp_low
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                with open(temp_low, "rb") as f:
+                    st.download_button(
+                        label=f"⬇️ Download Chapter {chap_num} (64kbps MP3)",
+                        data=f,
+                        file_name=f"chapter_{chap_num}_64kbps.mp3",
+                        mime="audio/mpeg"
+                    )
+
+                os.unlink(temp_high)
+                os.unlink(temp_low)
