@@ -6,8 +6,9 @@ from gtts import gTTS
 import subprocess
 import tempfile
 import os
+import time
 
-st.title("📚 PDF Chapter ➜ Expressive MP3")
+st.title("📚 PDF Chapter ➜ Expressive MP3 (Free gTTS w/ Retry)")
 
 uploaded_pdf = st.file_uploader("Upload PDF", type=["pdf"])
 chapter_input = st.text_input("Enter chapter number (e.g. 10):")
@@ -27,9 +28,7 @@ if uploaded_pdf and chapter_input:
         full_text += page.get_text("text") + "\n"
 
     # --- Split on lines that contain only a number ---
-    # We split so each chapter is a dict {chapter_number: text}
     parts = re.split(r'(?m)^\s*(\d+)\s*$', full_text)
-    # parts comes like ['', '1', 'chapter1 text', '2', 'chapter2 text', ...]
     chapters = {}
     for i in range(1, len(parts), 2):
         number = int(parts[i])
@@ -46,9 +45,22 @@ if uploaded_pdf and chapter_input:
         if st.button("Generate Expressive MP3"):
             with st.spinner("Generating speech..."):
                 tts = gTTS(text, lang="en")
+
+                # Create a temp MP3 (retry up to 5 times)
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
-                    tts.save(tmp.name)
                     temp_high = tmp.name
+
+                for attempt in range(5):
+                    try:
+                        tts.save(temp_high)
+                        break
+                    except Exception as e:
+                        if attempt == 4:
+                            st.error(f"TTS failed after retries: {e}")
+                            st.stop()
+                        wait = 5 * (attempt + 1)
+                        st.warning(f"Hit gTTS limit, retrying in {wait}s...")
+                        time.sleep(wait)
 
                 # Compress to 64 kbps
                 temp_low = temp_high.replace(".mp3", "_64k.mp3")
