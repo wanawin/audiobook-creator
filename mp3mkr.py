@@ -16,7 +16,6 @@ st.markdown(
 )
 
 openai_api_key = st.text_input("Enter your OpenAI API key", type="password")
-
 uploaded_file = st.file_uploader("Upload PDF", type="pdf")
 chapters_input = st.text_input("Chapters (e.g. 10-12)")
 
@@ -35,8 +34,10 @@ if uploaded_file and chapters_input and openai_api_key:
         else:
             start_ch, end_ch = int(m.group(1)), int(m.group(2))
 
-            # Split on chapter markers
-           parts = re.split(r'(?i)(?:chapter\s+)?(\b\d+\b)', full_text)
+            # --- FIXED SPLIT ---
+            # Split on headings like "Chapter 10" OR just "10" at line start
+            parts = re.split(r'(?i)(?:chapter\s+)?(\b\d+\b)', full_text)
+
             chapters = []
             for i in range(1, len(parts), 2):
                 title = parts[i]
@@ -45,7 +46,8 @@ if uploaded_file and chapters_input and openai_api_key:
                 if match:
                     num = int(match.group(1))
                     if start_ch <= num <= end_ch:
-                        clean_body = re.sub(r'\s+\d+\s+', ' ', body)  # remove stray numbers
+                        # remove stray page numbers or single digits floating
+                        clean_body = re.sub(r'\s+\d+\s+', ' ', body)
                         chapters.append(f"{title.strip()}\n{clean_body.strip()}")
 
             if not chapters:
