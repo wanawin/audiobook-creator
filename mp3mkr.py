@@ -9,16 +9,14 @@ st.set_page_config(page_title="Offline Audiobook Creator", page_icon="📚")
 st.title("📚 Offline Text → MP3 Audiobook")
 st.write("Paste text for one chapter and click *Generate MP3*.")
 
-# --- TEXT INPUT ---
 text = st.text_area("Chapter text", height=300, placeholder="Paste your chapter text here...")
 
-# --- VOICE SELECTION ---
+# Voice selection
 engine = pyttsx3.init()
 voices = engine.getProperty('voices')
 voice_names = [f"{i}: {v.name}" for i, v in enumerate(voices)]
 selected_voice = st.selectbox("Select Voice", voice_names, index=0)
 
-# --- BITRATE ---
 bitrate = st.selectbox(
     "Choose MP3 Bitrate (lower = smaller file)",
     ["32k", "48k", "64k", "96k", "128k"],
@@ -30,24 +28,17 @@ if st.button("Generate MP3"):
         st.warning("Please enter some text first.")
     else:
         with st.spinner("Generating speech..."):
-            # Temporary WAV file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
                 wav_path = tmp_wav.name
-
-            # Configure TTS voice
             voice_index = int(selected_voice.split(":")[0])
             engine.setProperty('voice', voices[voice_index].id)
-
-            # Generate WAV
             engine.save_to_file(text, wav_path)
             engine.runAndWait()
 
-            # Convert to MP3 with chosen bitrate
             mp3_path = wav_path.replace(".wav", ".mp3")
             audio = AudioSegment.from_wav(wav_path)
             audio.export(mp3_path, format="mp3", bitrate=bitrate)
 
-            # Download
             with open(mp3_path, "rb") as f:
                 st.success("✅ MP3 generated!")
                 st.download_button(
@@ -56,5 +47,4 @@ if st.button("Generate MP3"):
                     file_name="chapter.mp3",
                     mime="audio/mpeg"
                 )
-
             os.remove(wav_path)
