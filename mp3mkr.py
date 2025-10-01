@@ -1,25 +1,24 @@
 import streamlit as st
 import fitz  # PyMuPDF for PDF text extraction
 import re
-import openai
+import pyttsx3
 from pathlib import Path
+import tempfile
 
-st.set_page_config(page_title="Book to Audio", page_icon="📖")
-
-st.title("📖 PDF Chapters to Expressive MP3")
+st.set_page_config(page_title="Book to Audio (Free TTS)", page_icon="📖")
+st.title("📖 PDF Chapters to MP3 (Offline / Free TTS)")
 
 st.markdown(
     """
-    Upload your PDF book, enter the chapter range (e.g. `10-12`),
-    and generate an **expressive MP3** for those chapters.
+    Upload your PDF, enter the chapter range (e.g. `10-12`), and create an MP3
+    **without needing an API key**. This uses local TTS (`pyttsx3`).
     """
 )
 
-openai_api_key = st.text_input("Enter your OpenAI API key", type="password")
 uploaded_file = st.file_uploader("Upload PDF", type="pdf")
 chapters_input = st.text_input("Chapters (e.g. 10-12)")
 
-if uploaded_file and chapters_input and openai_api_key:
+if uploaded_file and chapters_input:
     try:
         # Read PDF text
         pdf = fitz.open(stream=uploaded_file.read(), filetype="pdf")
@@ -34,7 +33,6 @@ if uploaded_file and chapters_input and openai_api_key:
         else:
             start_ch, end_ch = int(m.group(1)), int(m.group(2))
 
-            # --- FIXED SPLIT ---
             # Split on headings like "Chapter 10" OR just "10" at line start
             parts = re.split(r'(?i)(?:chapter\s+)?(\b\d+\b)', full_text)
 
@@ -46,7 +44,6 @@ if uploaded_file and chapters_input and openai_api_key:
                 if match:
                     num = int(match.group(1))
                     if start_ch <= num <= end_ch:
-                        # remove stray page numbers or single digits floating
                         clean_body = re.sub(r'\s+\d+\s+', ' ', body)
                         chapters.append(f"{title.strip()}\n{clean_body.strip()}")
 
@@ -57,26 +54,28 @@ if uploaded_file and chapters_input and openai_api_key:
                 st.subheader("Extracted Text Preview")
                 st.text_area("Combined Text", combined_text[:5000], height=300)
 
-                # Generate MP3 using OpenAI TTS
-                if st.button("Generate Expressive MP3"):
-                    openai.api_key = openai_api_key
-                    with st.spinner("Generating MP3..."):
-                        response = openai.audio.speech.create(
-                            model="gpt-4o-mini-tts",
-                            voice="alloy",  # expressive voice
-                            input=combined_text
-                        )
-                        mp3_data = response.read()
-                        output_file = Path("chapters.mp3")
-                        with open(output_file, "wb") as f:
-                            f.write(mp3_data)
-
+                if st.button("Generate MP3 (Free TTS)"):
+                    with st.spinner("Generating MP3... (this may take a few minutes)"):
+                        engine = pyttsx3.init()
+                        # Optional: set slower rate & voice for clarity
+                        rate = engine.getProperty('rate')
+                        engine.setProperty('rate', rate - 30)
+                        voices = engine.getProperty('voices')
+                        if voices:
+                            engine.setProperty('voice', voices[0].id)
+                        # Generate temporary MP3
+                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+                        temp_path = Path(temp_file.name)
+                        engine.save_to_file(combined_text, str(temp_path))
+                        engine.runAndWait()
+                        temp_file.close()
                     st.success("MP3 ready!")
-                    st.download_button(
-                        label="Download MP3",
-                        data=mp3_data,
-                        file_name="chapters.mp3",
-                        mime="audio/mpeg"
-                    )
+                    with open(temp_path, "rb") as f:
+                        st.download_button(
+                            label="Download MP3",
+                            data=f,
+                            file_name="chapters.mp3",
+                            mime="audio/mpeg"
+                        )
     except Exception as e:
         st.error(f"Error: {e}")
