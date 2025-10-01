@@ -1,47 +1,48 @@
 import streamlit as st
-import fitz  # PyMuPDF
-import re
-import io
-from gtts import gTTS
+import pyttsx3
 from pydub import AudioSegment
+import tempfile
+import os
 
-st.title("📖 PDF Chapter → Expressive MP3")
+st.set_page_config(page_title="Offline Audiobook Creator", page_icon="📚")
 
-pdf = st.file_uploader("Upload PDF", type="pdf")
-chapter = st.text_input("Chapter number (e.g., 10)")
+st.title("📚 Offline Text → MP3 Audiobook")
+st.write("Paste text for one chapter below and click *Generate MP3*.")
 
-def extract_chapter_text(pdf_file, chapter_num):
-    text = ""
-    with fitz.open(stream=pdf_file.read(), filetype="pdf") as doc:
-        for page in doc:
-            t = page.get_text()
-            # very simple header search
-            if re.search(rf"\bChapter\s+{chapter_num}\b", t, re.IGNORECASE):
-                text += t
-    return text.strip()
+text = st.text_area("Chapter text", height=300, placeholder="Paste your chapter text here...")
 
-if pdf and chapter:
-    chapter_text = extract_chapter_text(pdf, chapter)
-    if chapter_text:
-        st.subheader(f"Chapter {chapter} Preview")
-        st.write(chapter_text[:500] + "...")
-        
-        if st.button("Generate Expressive MP3"):
-            # break into ~4k char chunks to avoid gTTS 5k limit
-            chunks = [chapter_text[i:i+4000] for i in range(0, len(chapter_text), 4000)]
-            audio = AudioSegment.silent(duration=0)
-            for i, chunk in enumerate(chunks, 1):
-                tts = gTTS(chunk, lang='en')
-                temp = io.BytesIO()
-                tts.write_to_fp(temp)
-                temp.seek(0)
-                seg = AudioSegment.from_file(temp, format="mp3")
-                audio += seg
-            # export low bitrate
-            out = io.BytesIO()
-            audio.export(out, format="mp3", bitrate="48k")  # lower size
-            st.download_button("Download MP3", out.getvalue(),
-                               file_name=f"chapter_{chapter}.mp3",
-                               mime="audio/mpeg")
+bitrate = st.selectbox(
+    "Choose MP3 Bitrate (lower = smaller file)",
+    ["32k", "48k", "64k", "96k", "128k"],
+    index=1
+)
+
+if st.button("Generate MP3"):
+    if not text.strip():
+        st.warning("Please enter some text first.")
     else:
-        st.error("Couldn’t find that chapter.")
+        with st.spinner("Generating speech..."):
+            # Create a temp wav file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
+                wav_path = tmp_wav.name
+            engine = pyttsx3.init()
+            engine.save_to_file(text, wav_path)
+            engine.runAndWait()
+
+            # Convert wav to mp3 at chosen bitrate
+            mp3_path = wav_path.replace(".wav", ".mp3")
+            audio = AudioSegment.from_wav(wav_path)
+            audio.export(mp3_path, format="mp3", bitrate=bitrate)
+
+            # Show download link
+            with open(mp3_path, "rb") as f:
+                st.success("✅ MP3 generated!")
+                st.download_button(
+                    label="⬇️ Download MP3",
+                    data=f,
+                    file_name="chapter.mp3",
+                    mime="audio/mpeg"
+                )
+
+            # Clean up wav
+            os.remove(wav_path)
