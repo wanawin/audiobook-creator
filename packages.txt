@@ -1,2 +1,3 @@
 ffmpeg
 espeak
+portaudio19-dev
