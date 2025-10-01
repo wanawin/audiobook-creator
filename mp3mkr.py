@@ -4,37 +4,35 @@ from pydub import AudioSegment
 import tempfile
 import os
 
-st.set_page_config(page_title="Offline Audiobook Creator", page_icon="📚")
+st.set_page_config(page_title="Audiobook Maker", page_icon="🎧")
 
-st.title("📚 Offline Text → MP3 Audiobook")
-st.write("Paste text for one chapter and click *Generate MP3*.")
+st.title("📚 Offline Audiobook Creator")
+st.write("Paste one chapter of text and generate an MP3 you can download to play on iPad.")
 
 text = st.text_area("Chapter text", height=300, placeholder="Paste your chapter text here...")
 
-# Voice selection
+# Initialize TTS engine and list available voices
 engine = pyttsx3.init()
 voices = engine.getProperty('voices')
-voice_names = [f"{i}: {v.name}" for i, v in enumerate(voices)]
-selected_voice = st.selectbox("Select Voice", voice_names, index=0)
+voice_options = [f"{i}: {v.name}" for i, v in enumerate(voices)]
+selected_voice = st.selectbox("Select Voice", voice_options)
 
-bitrate = st.selectbox(
-    "Choose MP3 Bitrate (lower = smaller file)",
-    ["32k", "48k", "64k", "96k", "128k"],
-    index=1
-)
+bitrate = st.selectbox("Choose MP3 bitrate (lower = smaller file)", ["32k", "48k", "64k", "96k", "128k"], index=2)
 
 if st.button("Generate MP3"):
     if not text.strip():
-        st.warning("Please enter some text first.")
+        st.warning("Please paste some text first.")
     else:
-        with st.spinner("Generating speech..."):
+        with st.spinner("Generating MP3..."):
+            # Save to WAV first
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
                 wav_path = tmp_wav.name
             voice_index = int(selected_voice.split(":")[0])
-            engine.setProperty('voice', voices[voice_index].id)
+            engine.setProperty("voice", voices[voice_index].id)
             engine.save_to_file(text, wav_path)
             engine.runAndWait()
 
+            # Convert WAV to MP3 with chosen bitrate
             mp3_path = wav_path.replace(".wav", ".mp3")
             audio = AudioSegment.from_wav(wav_path)
             audio.export(mp3_path, format="mp3", bitrate=bitrate)
@@ -47,4 +45,6 @@ if st.button("Generate MP3"):
                     file_name="chapter.mp3",
                     mime="audio/mpeg"
                 )
+
             os.remove(wav_path)
+            os.remove(mp3_path)
