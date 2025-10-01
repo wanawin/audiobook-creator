@@ -1,58 +1,47 @@
 import streamlit as st
-import pyttsx3
 import fitz  # PyMuPDF
+import re
+import io
+from gtts import gTTS
 from pydub import AudioSegment
-import tempfile
-import os
 
-st.title("📚 PDF Chapters ➜ Offline MP3 (No Limits)")
-st.write("Select a page range to convert into an MP3 you can email to your iPad.")
+st.title("📖 PDF Chapter → Expressive MP3")
 
-uploaded_file = st.file_uploader("Upload PDF", type="pdf")
-start_page = st.number_input("Start page", min_value=1, step=1)
-end_page = st.number_input("End page", min_value=1, step=1)
+pdf = st.file_uploader("Upload PDF", type="pdf")
+chapter = st.text_input("Chapter number (e.g., 10)")
 
-bitrate = st.selectbox("Output bitrate (lower = smaller file)", ["32k", "48k", "64k", "96k"], index=1)
+def extract_chapter_text(pdf_file, chapter_num):
+    text = ""
+    with fitz.open(stream=pdf_file.read(), filetype="pdf") as doc:
+        for page in doc:
+            t = page.get_text()
+            # very simple header search
+            if re.search(rf"\bChapter\s+{chapter_num}\b", t, re.IGNORECASE):
+                text += t
+    return text.strip()
 
-if uploaded_file:
-    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-    max_pages = len(doc)
-    st.info(f"PDF has {max_pages} pages")
-
-    # Adjust end_page default after loading PDF
-    if end_page < start_page:
-        end_page = start_page
-
-    if st.button("Generate MP3"):
-        text = ""
-        for page_num in range(start_page - 1, min(end_page, max_pages)):
-            text += doc[page_num].get_text("text") + "\n"
-
-        if not text.strip():
-            st.error("No text found in that page range.")
-        else:
-            st.write("🔊 Converting text to speech offline...")
-
-            # Use pyttsx3 to create a temporary WAV file
-            engine = pyttsx3.init()
-            tmp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-            engine.save_to_file(text, tmp_wav.name)
-            engine.runAndWait()
-
-            # Convert WAV to MP3 with chosen bitrate
-            tmp_mp3 = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-            audio = AudioSegment.from_wav(tmp_wav.name)
-            audio.export(tmp_mp3.name, format="mp3", bitrate=bitrate)
-
-            st.success("✅ MP3 ready!")
-            with open(tmp_mp3.name, "rb") as f:
-                st.download_button(
-                    label="⬇️ Download MP3",
-                    data=f,
-                    file_name=f"chapter_{start_page}-{end_page}.mp3",
-                    mime="audio/mpeg",
-                )
-
-            # Cleanup
-            os.unlink(tmp_wav.name)
-            os.unlink(tmp_mp3.name)
+if pdf and chapter:
+    chapter_text = extract_chapter_text(pdf, chapter)
+    if chapter_text:
+        st.subheader(f"Chapter {chapter} Preview")
+        st.write(chapter_text[:500] + "...")
+        
+        if st.button("Generate Expressive MP3"):
+            # break into ~4k char chunks to avoid gTTS 5k limit
+            chunks = [chapter_text[i:i+4000] for i in range(0, len(chapter_text), 4000)]
+            audio = AudioSegment.silent(duration=0)
+            for i, chunk in enumerate(chunks, 1):
+                tts = gTTS(chunk, lang='en')
+                temp = io.BytesIO()
+                tts.write_to_fp(temp)
+                temp.seek(0)
+                seg = AudioSegment.from_file(temp, format="mp3")
+                audio += seg
+            # export low bitrate
+            out = io.BytesIO()
+            audio.export(out, format="mp3", bitrate="48k")  # lower size
+            st.download_button("Download MP3", out.getvalue(),
+                               file_name=f"chapter_{chapter}.mp3",
+                               mime="audio/mpeg")
+    else:
+        st.error("Couldn’t find that chapter.")
