@@ -3,3 +3,5 @@ pymupdf
 openai
 ebooklib
 beautifulsoup4
+pyttsx3
+PyPDF2
