@@ -1,80 +1,58 @@
 import streamlit as st
+import pyttsx3
 import fitz  # PyMuPDF
-import re
-import io
-from gtts import gTTS
-import subprocess
+from pydub import AudioSegment
 import tempfile
 import os
-import time
 
-st.title("📚 PDF Chapter ➜ Expressive MP3 (Free gTTS w/ Retry)")
+st.title("📚 PDF Chapters ➜ Offline MP3 (No Limits)")
+st.write("Select a page range to convert into an MP3 you can email to your iPad.")
 
-uploaded_pdf = st.file_uploader("Upload PDF", type=["pdf"])
-chapter_input = st.text_input("Enter chapter number (e.g. 10):")
+uploaded_file = st.file_uploader("Upload PDF", type="pdf")
+start_page = st.number_input("Start page", min_value=1, step=1)
+end_page = st.number_input("End page", min_value=1, step=1)
 
-if uploaded_pdf and chapter_input:
-    try:
-        chap_num = int(chapter_input)
-    except ValueError:
-        st.error("Please enter just a number (e.g. 10).")
-        st.stop()
+bitrate = st.selectbox("Output bitrate (lower = smaller file)", ["32k", "48k", "64k", "96k"], index=1)
 
-    # --- Extract text from PDF ---
-    pdf_bytes = uploaded_pdf.read()
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    full_text = ""
-    for page in doc:
-        full_text += page.get_text("text") + "\n"
+if uploaded_file:
+    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+    max_pages = len(doc)
+    st.info(f"PDF has {max_pages} pages")
 
-    # --- Split on lines that contain only a number ---
-    parts = re.split(r'(?m)^\s*(\d+)\s*$', full_text)
-    chapters = {}
-    for i in range(1, len(parts), 2):
-        number = int(parts[i])
-        text = parts[i+1].strip()
-        chapters[number] = text
+    # Adjust end_page default after loading PDF
+    if end_page < start_page:
+        end_page = start_page
 
-    if chap_num not in chapters:
-        st.error(f"Chapter {chap_num} not found. Available: {sorted(chapters.keys())}")
-    else:
-        text = chapters[chap_num]
-        st.subheader(f"Chapter {chap_num} Preview")
-        st.write(text[:500] + "..." if len(text) > 500 else text)
+    if st.button("Generate MP3"):
+        text = ""
+        for page_num in range(start_page - 1, min(end_page, max_pages)):
+            text += doc[page_num].get_text("text") + "\n"
 
-        if st.button("Generate Expressive MP3"):
-            with st.spinner("Generating speech..."):
-                tts = gTTS(text, lang="en")
+        if not text.strip():
+            st.error("No text found in that page range.")
+        else:
+            st.write("🔊 Converting text to speech offline...")
 
-                # Create a temp MP3 (retry up to 5 times)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
-                    temp_high = tmp.name
+            # Use pyttsx3 to create a temporary WAV file
+            engine = pyttsx3.init()
+            tmp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+            engine.save_to_file(text, tmp_wav.name)
+            engine.runAndWait()
 
-                for attempt in range(5):
-                    try:
-                        tts.save(temp_high)
-                        break
-                    except Exception as e:
-                        if attempt == 4:
-                            st.error(f"TTS failed after retries: {e}")
-                            st.stop()
-                        wait = 5 * (attempt + 1)
-                        st.warning(f"Hit gTTS limit, retrying in {wait}s...")
-                        time.sleep(wait)
+            # Convert WAV to MP3 with chosen bitrate
+            tmp_mp3 = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+            audio = AudioSegment.from_wav(tmp_wav.name)
+            audio.export(tmp_mp3.name, format="mp3", bitrate=bitrate)
 
-                # Compress to 64 kbps
-                temp_low = temp_high.replace(".mp3", "_64k.mp3")
-                subprocess.run([
-                    "ffmpeg", "-y", "-i", temp_high, "-b:a", "64k", temp_low
-                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            st.success("✅ MP3 ready!")
+            with open(tmp_mp3.name, "rb") as f:
+                st.download_button(
+                    label="⬇️ Download MP3",
+                    data=f,
+                    file_name=f"chapter_{start_page}-{end_page}.mp3",
+                    mime="audio/mpeg",
+                )
 
-                with open(temp_low, "rb") as f:
-                    st.download_button(
-                        label=f"⬇️ Download Chapter {chap_num} (64kbps MP3)",
-                        data=f,
-                        file_name=f"chapter_{chap_num}_64kbps.mp3",
-                        mime="audio/mpeg"
-                    )
-
-                os.unlink(temp_high)
-                os.unlink(temp_low)
+            # Cleanup
+            os.unlink(tmp_wav.name)
+            os.unlink(tmp_mp3.name)
