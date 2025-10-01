@@ -36,12 +36,12 @@ if uploaded_file and chapters_input and openai_api_key:
             start_ch, end_ch = int(m.group(1)), int(m.group(2))
 
             # Split on chapter markers
-            parts = re.split(r'(?i)(chapter\s+\d+)', full_text)
+           parts = re.split(r'(?i)(?:chapter\s+)?(\b\d+\b)', full_text)
             chapters = []
             for i in range(1, len(parts), 2):
                 title = parts[i]
                 body = parts[i+1] if i+1 < len(parts) else ""
-                match = re.search(r'chapter\s+(\d+)', title, re.I)
+                match = re.search(r'(\d+)', title)
                 if match:
                     num = int(match.group(1))
                     if start_ch <= num <= end_ch:
