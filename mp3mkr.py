@@ -5,7 +5,7 @@ import tempfile
 import os
 
 st.set_page_config(page_title="Audiobook Creator", page_icon="🎧")
-st.title("📖 PDF/Chapter to MP3")
+st.title("📖 Chapter to MP3")
 
 text = st.text_area("Paste chapter text here", height=300)
 
@@ -23,12 +23,11 @@ if st.button("Generate MP3"):
         with st.spinner("Generating audio..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_wav:
                 wav_path = tmp_wav.name
-            voice_index = int(selected_voice.split(":")[0])
-            engine.setProperty("voice", voices[voice_index].id)
-            engine.save_to_file(text, wav_path)
-            engine.runAndWait()
+                voice_index = int(selected_voice.split(":")[0])
+                engine.setProperty("voice", voices[voice_index].id)
+                engine.save_to_file(text, wav_path)
+                engine.runAndWait()
 
-            # Convert to mp3
             mp3_path = wav_path.replace(".wav", ".mp3")
             audio = AudioSegment.from_wav(wav_path)
             audio.export(mp3_path, format="mp3", bitrate=bitrate)
@@ -41,3 +40,6 @@ if st.button("Generate MP3"):
                     file_name="chapter.mp3",
                     mime="audio/mpeg"
                 )
+
+            os.remove(wav_path)
+            os.remove(mp3_path)
