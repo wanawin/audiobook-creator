@@ -5,3 +5,5 @@ ebooklib
 beautifulsoup4
 pyttsx3
 PyPDF2
+gTTS
+PyMuPDF
