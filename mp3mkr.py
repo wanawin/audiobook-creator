@@ -1,65 +1,51 @@
 import streamlit as st
-import pyttsx3
-import tempfile
-import PyPDF2
+from gtts import gTTS
+import fitz  # PyMuPDF
 import re
-import os
+import io
 
-st.title("📖 PDF to Expressive MP3 (Offline)")
+st.title("📚 PDF Chapters ➜ Expressive MP3")
 
-uploaded = st.file_uploader("Upload PDF", type=["pdf"])
-chapters_input = st.text_input("Chapters to export (e.g. 10-12 or 10,11,12)")
+uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
+chapter_range = st.text_input("Chapters (e.g. 10-12)")
 
-if uploaded and chapters_input:
-    # ---- Read PDF ----
-    reader = PyPDF2.PdfReader(uploaded)
+if uploaded_file and chapter_range:
+    # Extract PDF text
+    pdf = fitz.open(stream=uploaded_file.read(), filetype="pdf")
     full_text = ""
-    for page in reader.pages:
-        text = page.extract_text()
-        if text:
-            full_text += "\n" + text
+    for page in pdf:
+        full_text += page.get_text("text") + "\n"
 
-    # ---- Split into chapters ----
-    # handles either "Chapter 10" OR just "10" at line start
-    parts = re.split(r'(?:chapter\s*)?(\b\d+\b)', full_text, flags=re.IGNORECASE)
-    # parts = [before first chapter, "1", text, "2", text, ...]
+    # Use regex that matches just plain numbers on their own line
+    parts = re.split(r"(?m)^\s*(\d+)\s*$", full_text)
+    # parts will be like: ['', '1', 'Chapter1 text', '2', 'Chapter2 text', ...]
+
+    # Build dict {chapter_num: text}
     chapters = {}
     for i in range(1, len(parts), 2):
-        num = parts[i].strip()
-        body = parts[i+1].strip()
-        if num.isdigit():
-            chapters[int(num)] = body
+        try:
+            num = int(parts[i])
+            content = parts[i + 1].strip()
+            chapters[num] = content
+        except:
+            continue
 
-    # ---- Parse user input ----
-    requested = []
-    for chunk in chapters_input.split(","):
-        if "-" in chunk:
-            start, end = chunk.split("-")
-            requested.extend(range(int(start), int(end)+1))
-        else:
-            requested.append(int(chunk))
+    # Parse requested range
+    start, end = map(int, chapter_range.split("-"))
+    selected = [chapters[c] for c in range(start, end + 1) if c in chapters]
 
-    combined = ""
-    for c in requested:
-        if c in chapters:
-            combined += f"Chapter {c}\n\n{chapters[c]}\n\n"
-
-    if not combined.strip():
-        st.error("⚠️ No chapters found. Make sure your numbers match the PDF headings.")
+    if not selected:
+        st.error("⚠️ No chapters found in that range.")
     else:
-        st.success(f"Found {len(requested)} chapters")
+        combined_text = "\n\n".join(selected)
 
-        if st.button("Generate Expressive MP3"):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmpfile:
-                engine = pyttsx3.init()
-                # Optional: make voice a bit expressive
-                rate = engine.getProperty('rate')
-                engine.setProperty('rate', rate - 30)
-                voices = engine.getProperty('voices')
-                if voices:
-                    engine.setProperty('voice', voices[0].id)
-                engine.save_to_file(combined, tmpfile.name)
-                engine.runAndWait()
-                st.audio(tmpfile.name)
-                with open(tmpfile.name, "rb") as f:
-                    st.download_button("⬇️ Download MP3", f, file_name="chapters.mp3")
+        # Convert to speech with gTTS
+        tts = gTTS(combined_text, lang="en", slow=False)
+        mp3_bytes = io.BytesIO()
+        tts.write_to_fp(mp3_bytes)
+        mp3_bytes.seek(0)
+
+        st.audio(mp3_bytes, format="audio/mp3")
+        st.download_button("Download MP3", data=mp3_bytes,
+                           file_name=f"chapters_{start}-{end}.mp3",
+                           mime="audio/mp3")
